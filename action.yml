@@ -1,0 +1,71 @@
+name: 'Approve PR'
+description: 'Approve Pull Request'
+
+inputs:
+  token:
+    description: 'PAT'
+    required: true
+  repository:
+    description: 'Repository, ex: {owner}/{repo}'
+    required: true
+  pr-number:
+    description: 'PR Number'
+    required: true
+  merge-method:
+    description: 'Merge Method: merge, squash, rebase'
+    default: 'squash'
+  del-branch:
+    description: 'Delete HEAD Branch'
+    default: 'true'
+
+outputs:
+  merged:
+    description: 'Merged'
+    value: ${{ steps.merge.outputs.merged }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: merge
+      name: Approve Pull Request
+      shell: bash
+      run: |
+        RESULT=`curl -s "${GITHUB_API_URL}/repos/${{ inputs.repository }}/pulls/${{ inputs.pr-number }}" -H "Authorization: Bearer ${{ inputs.token }}"`
+
+        d=`echo "$RESULT" | jq -r '. | "merged=" + (.merged?|tostring) + "\n" + "message=\"" + .message? + "\"\n" + "head=\"" + .head?.ref + "\""'`
+
+        eval $d
+
+        if [ -z "$message" ]; then
+          echo "Pull request exists"
+
+          BODY="{\"merge_method\":\"${{ inputs.merge-method }}\"}"
+
+          RESULT=`curl -s -X PUT "${GITHUB_API_URL}/repos/${{ inputs.repository }}/pulls/${{ inputs.pr-number }}/merge" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${{ inputs.token }}" -d "${BODY}"`
+
+          d=`echo "$RESULT" | jq -r '. | "merged=" + (.merged?|tostring) + "\n" + "message=\"" + .message? + "\""'`
+
+          eval $d
+
+          echo "merged=$merged" >> $GITHUB_OUTPUT
+
+          if [ "$merged" = "true" ]; then
+            echo "PR ${{ inputs.pr-number }} merged"
+
+            if [ "${{ inputs.del-branch }}" = "true" ]; then
+              RESULT=`curl -s -X DELETE "${GITHUB_API_URL}/repos/${{ inputs.repository }}/git/refs/heads/$head" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${{ inputs.token }}"`
+
+              d=`echo "$RESULT" | jq -r '. | "message=\"" + .message? + "\""'`
+
+              eval $d
+
+              echo "Delete $head, $message"
+            fi
+          else
+            echo "PR ${{ inputs.pr-number }} not merged: $message"
+            exit 1
+          fi
+        else
+          echo "PR ${{ inputs.pr-number }} not found, error: $message"
+          exit 1
+        fi
