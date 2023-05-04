@@ -13,7 +13,7 @@ inputs:
     required: true
   merge-method:
     description: 'Merge Method: merge, squash, rebase'
-    default: 'squash'
+    default: 'rebase'
   del-branch:
     description: 'Delete HEAD Branch'
     default: 'true'
